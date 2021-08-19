@@ -13,7 +13,7 @@ import (
 )
 
 const (
-   topologyRegx = "topology.*"
+	topologyRegx = "topology.*"
 )
 
 type Interface interface {
@@ -21,7 +21,7 @@ type Interface interface {
 }
 
 type KubeClient struct {
-	clientSet   *kubernetes.Clientset
+	clientSet *kubernetes.Clientset
 }
 
 func NewK8SUtils(kubeConfig string) (Interface, error) {
@@ -49,8 +49,8 @@ func NewK8SUtils(kubeConfig string) (Interface, error) {
 		}
 	}
 
-	return  &KubeClient{
-		clientSet:   clientset,
+	return &KubeClient{
+		clientSet: clientset,
 	}, nil
 }
 

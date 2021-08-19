@@ -14,8 +14,8 @@ import (
 	"runtime/debug"
 	"time"
 	"utils"
-	"utils/log"
 	"utils/k8sutils"
+	"utils/log"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -32,7 +32,7 @@ const (
 	csiVersion        = "2.2.13"
 	defaultDriverName = "csi.huawei.com"
 
-	nodeNameEnv 	= "CSI_ESDK_NODENAME"
+	nodeNameEnv = "CSI_ESDK_NODENAME"
 )
 
 var (
@@ -73,7 +73,7 @@ type CSIConfig struct {
 }
 
 type CSISecret struct {
-	Secrets map[string]interface{}  `json:"secrets"`
+	Secrets map[string]interface{} `json:"secrets"`
 }
 
 func init() {
