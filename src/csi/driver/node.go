@@ -173,6 +173,12 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 	}
 	log.Infof("Get NodeId %s", nodeBytes)
 
+	if d.nodeName == "" {
+		return &csi.NodeGetInfoResponse{
+			NodeId: string(nodeBytes),
+		}, nil
+	}
+
 	// Get topology info from Node labels
 	topology, err := d.k8sUtils.GetNodeTopology(d.nodeName)
 	if err != nil {

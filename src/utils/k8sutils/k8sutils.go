@@ -62,7 +62,7 @@ func (k *KubeClient) GetNodeTopology(nodeName string) (map[string]string, error)
 
 	topology := make(map[string]string)
 	for key, value := range k8sNode.Labels {
-		if match, err := regexp.MatchString(topologyRegx, key); err !=nil && match {
+		if match, err := regexp.MatchString(topologyRegx, key); err == nil && match {
 			topology[key] = value
 		}
 	}
