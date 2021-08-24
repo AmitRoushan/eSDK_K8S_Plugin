@@ -28,7 +28,7 @@ var (
 		{"qos", filterByQos},
 		{"hyperMetro", filterByMetro},
 		{"replication", filterByReplication},
-		{"topologyRequirement", filterByTopology},
+		{TopologyRequirement, filterByTopology},
 	}
 
 	secondaryFilterFuncs = [][]interface{}{
@@ -38,8 +38,6 @@ var (
 		{"replication", filterByReplication},
 	}
 )
-
-type FilterFunction func(interface{}, []*StoragePool) []*StoragePool
 
 type AccessibleTopology struct {
 	RequisiteTopologies []map[string]string
@@ -124,9 +122,26 @@ func newBackend(backendName string, config map[string]interface{}) (*Backend, er
 		return nil, errors.New("parameters must be configured for backend")
 	}
 
-	supportedTopologies, exists := config[SupportedTopologies].([]map[string]string)
-	if !exists {
-		return nil, errors.New("invalid supportedTopologies configured for backend")
+	supportedTopologies := make([]map[string]string, 0)
+	if topologies, exist := config[SupportedTopologies]; exist {
+		topologyArray , ok := topologies.([]interface{})
+		if !ok {
+			return nil, errors.New("invalid supported topologies configuration")
+		}
+		for _, topologyArrElem := range topologyArray {
+			topologyMap, ok := topologyArrElem.(map[string]interface{})
+			if !ok {
+				return nil, errors.New("invalid supported topologies configuration")
+			}
+			tempMap := make(map[string]string, 0)
+			for topologyKey, value := range topologyMap {
+				if topologyValue, ok := value.(string); ok {
+					tempMap[topologyKey] = topologyValue
+				}
+			}
+
+			supportedTopologies = append(supportedTopologies, tempMap)
+		}
 	}
 
 	plugin := plugin.GetPlugin(storage)
@@ -290,12 +305,14 @@ func selectOnePool(requestSize int64,
 	}
 
 	for _, i := range filterFuncs {
-		key, filter := i[0].(string), i[1].(FilterFunction)
-		value, _ := parameters[key].(string)
-		filterPools = filter(value, filterPools)
-		if len(filterPools) == 0 {
-			return nil, fmt.Errorf("failed to select pool, the last filter field: %s, parameters %v",
-				key, parameters)
+		key, filter := i[0].(string), i[1].(func(interface{}, []*StoragePool) []*StoragePool)
+		value, exists := parameters[key]
+		if exists {
+			filterPools = filter(value, filterPools)
+			if len(filterPools) == 0 {
+				return nil, fmt.Errorf("failed to select pool, the last filter field: %s, parameters %v",
+					key, parameters)
+			}
 		}
 	}
 
@@ -597,7 +614,6 @@ func sortPoolsByPreferredTopologies(candidatePools []*StoragePool, preferredTopo
 	orderedPools := make([]*StoragePool, 0)
 
 	for _, preferred := range preferredTopologies {
-
 		newRemainingPools := make([]*StoragePool, 0)
 		poolBucket := make([]*StoragePool, 0)
 
