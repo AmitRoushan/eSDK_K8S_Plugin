@@ -124,7 +124,7 @@ func newBackend(backendName string, config map[string]interface{}) (*Backend, er
 
 	supportedTopologies := make([]map[string]string, 0)
 	if topologies, exist := config[SupportedTopologies]; exist {
-		topologyArray , ok := topologies.([]interface{})
+		topologyArray, ok := topologies.([]interface{})
 		if !ok {
 			return nil, errors.New("invalid supported topologies configuration")
 		}
@@ -564,7 +564,7 @@ func isTopologySupportedByBackend(backend *Backend, topology map[string]string) 
 	for _, supported := range backend.SupportedTopologies {
 		eachFound := true
 		for k, v := range topology {
-			if sup, ok := supported[k]; ok && sup != v {
+			if sup, ok := supported[k]; !ok || (sup != v) {
 				eachFound = false
 				break
 			}
