@@ -351,7 +351,7 @@ func removeSCSISymlinks(devices []string) error {
 
 		err = removeSymlinks(devices, realPath, link)
 		if err != nil {
-			return  err
+			return err
 		}
 	}
 
@@ -585,23 +585,23 @@ func ResizeBlock(tgtLunWWN string) error {
 
 func getDeviceInfo(dev string) map[string]string {
 	device := "/dev/" + dev
-	devInfo := map[string]string {
-		"device": device,
-		"host": "",
+	devInfo := map[string]string{
+		"device":  device,
+		"host":    "",
 		"channel": "",
-		"id": "",
-		"lun": "",
+		"id":      "",
+		"lun":     "",
 	}
 
 	output, _ := utils.ExecShellCmd("lsscsi")
-	if output == "" || strings.Contains(output, "command not found"){
+	if output == "" || strings.Contains(output, "command not found") {
 		return devInfo
 	}
 
 	devLines := strings.Split(output, "\n")
 	for _, d := range devLines {
 		devStrings := strings.Fields(d)
-		dev := devStrings[len(devStrings) - 1]
+		dev := devStrings[len(devStrings)-1]
 		if dev == device {
 			hostChannelInfo := strings.Split(strings.Trim(devStrings[0], "[]"), ":")
 			devInfo["host"] = hostChannelInfo[0]
@@ -947,4 +947,27 @@ func RemoveRoCEDevice(device string) ([]string, string, error) {
 	}
 
 	return devices, multiPathName, nil
+}
+
+// RemoveNvmeFcDevice remove dm device if present
+func RemoveNvmeFcDevice(device string) (string, error) {
+	var multiPathName string
+	var err error
+	if strings.HasPrefix(device, "dm") {
+		multiPathName = device
+		// devices: nvme0n1, nvme2n1,
+		_, err = getDeviceFromDM(multiPathName)
+		if err != nil {
+			log.Warningf("Get the devices from the multipath %s error: %v", multiPathName, err)
+		}
+
+		// just flush the dm path. no need to delete device on host, when delete the storage mapping
+		// the device will be automatically deleted.
+		err := FlushDMDevice(multiPathName)
+		if err == nil {
+			multiPathName = ""
+		}
+	}
+
+	return multiPathName, nil
 }
