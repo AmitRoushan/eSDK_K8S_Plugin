@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	configFile        = "/etc/huawei/csi.json"
-	secretFile        = "/etc/huawei/secret/secret.json"
+	configFile = "/etc/huawei/csi.json"
+	secretFile = "/etc/huawei/secret/secret.json"
+
 	controllerLogFile = "huawei-csi-controller"
 	nodeLogFile       = "huawei-csi-node"
 	csiLogFile        = "huawei-csi"
@@ -64,57 +65,38 @@ type CSIConfig struct {
 }
 
 type CSISecret struct {
-	Secrets map[string]interface{}  `json:"secrets"`
+	Secrets map[string]interface{} `json:"secrets"`
 }
 
-func init() {
-	_ = flag.Set("log_dir", "/var/log/huawei")
-	flag.Parse()
-
+func parseConfig() {
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		logrus.Fatalf("Read config file %s error: %v", configFile, err)
+		log.Fatalf("Read config file %s error: %v", configFile, err)
 	}
 
 	err = json.Unmarshal(data, &config)
 	if err != nil {
-		logrus.Fatalf("Unmarshal config file %s error: %v", configFile, err)
+		log.Fatalf("Unmarshal config file %s error: %v", configFile, err)
 	}
 
 	if len(config.Backends) <= 0 {
-		logrus.Fatalf("Must configure at least one backend")
+		log.Fatalf("Must configure at least one backend")
 	}
 
 	secretData, err := ioutil.ReadFile(secretFile)
 	if err != nil {
-		logrus.Fatalf("Read config file %s error: %v", secretFile, err)
+		log.Fatalf("Read config file %s error: %v", secretFile, err)
 	}
 
 	err = json.Unmarshal(secretData, &secret)
 	if err != nil {
-		logrus.Fatalf("Unmarshal config file %s error: %v", secretFile, err)
+		log.Fatalf("Unmarshal config file %s error: %v", secretFile, err)
 	}
 
 	_ = mergeData(config, secret)
 
 	if *containerized {
 		*controllerFlagFile = ""
-	}
-
-	var logFilePrefix string
-	if len(*controllerFlagFile) > 0 {
-		logFilePrefix = csiLogFile
-	} else if *controller {
-		logFilePrefix = controllerLogFile
-	} else {
-		logFilePrefix = nodeLogFile
-	}
-
-	err = log.Init(map[string]string{
-		"logFilePrefix": logFilePrefix,
-	})
-	if err != nil {
-		logrus.Fatalf("Init log error: %v", err)
 	}
 }
 
@@ -158,6 +140,24 @@ func updateBackendCapabilities() {
 }
 
 func main() {
+	// parse command line flags
+	flag.Parse()
+
+	// check log file name
+	var logFileName string
+	if len(*controllerFlagFile) > 0 {
+		logFileName = csiLogFile
+	} else if *controller {
+		logFileName = controllerLogFile
+	} else {
+		logFileName = nodeLogFile
+	}
+
+	err := log.InitLogging(logFileName)
+	if err != nil {
+		logrus.Fatalf("Init log error: %v", err)
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			log.Errorf("Runtime error caught in main routine: %v", r)
@@ -167,6 +167,9 @@ func main() {
 		log.Flush()
 		log.Close()
 	}()
+
+	// parse configurations
+	parseConfig()
 
 	if *controller || *controllerFlagFile != "" {
 		err := backend.RegisterBackend(config.Backends, true)
@@ -183,7 +186,7 @@ func main() {
 	}
 
 	endpointDir := filepath.Dir(*endpoint)
-	_, err := os.Stat(endpointDir)
+	_, err = os.Stat(endpointDir)
 	if err != nil && os.IsNotExist(err) {
 		os.Mkdir(endpointDir, 0755)
 	} else {

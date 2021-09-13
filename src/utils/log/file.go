@@ -1,46 +1,135 @@
 package log
 
 import (
+	"flag"
 	"fmt"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-func isExist(path string) (bool, error) {
-	_, err := os.Stat(path)
+const (
+	logFilePermission = 0644
+	defaultFileSize   = 1024 * 1024 * 20
+)
 
-	if err == nil {
-		return true, nil
-	}
+var (
+	logFileSizeThreshold = flag.String("logFileSize",
+		strconv.Itoa(defaultFileSize), // 20M
+		"Maximum logging file size before truncation")
+)
+
+// FileHook sends log entries to a file.
+type FileHook struct {
+	logFilePath          string
+	logFileHandle        *os.File
+	logRotationThreshold int64
+	formatter            logrus.Formatter
+	mutex                *sync.Mutex
+}
+
+// NewFileHook creates a new log hook for writing to a file.
+func NewFileHook(logFilePath string, logFormat logrus.Formatter) (*FileHook, error) {
+
+	logRoot := filepath.Dir(logFilePath)
+	dir, err := os.Lstat(logRoot)
 	if os.IsNotExist(err) {
-		return false, nil
+		if err := os.MkdirAll(logRoot, 0755); err != nil {
+			return nil, fmt.Errorf("could not create log directory %v. %v", logRoot, err)
+		}
 	}
-	return false, err
-}
+	if dir != nil && !dir.IsDir() {
+		return nil, fmt.Errorf("log path %v exists and is not a directory, please remove it", logRoot)
+	}
 
-func getFileByteSize(file *os.File) (int64, error) {
-	fileInfo, err := file.Stat()
+	filesizeThreshold, err := getNumInByte()
 	if err != nil {
-		return 0, err
+		logrus.Errorf("Calc max log file size error: %v.", err)
+		return nil, err
 	}
 
-	return fileInfo.Size(), nil
+	fileHandle, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, logFilePermission)
+	if err != nil {
+		return nil, err
+	}
+
+	return &FileHook{
+		logFilePath:          logFilePath,
+		logRotationThreshold: filesizeThreshold,
+		formatter:            logFormat,
+		logFileHandle:        fileHandle,
+		mutex:                &sync.Mutex{}}, nil
 }
 
-func write(file *os.File, data string) error {
-	_, err := file.WriteString(data)
-	return err
+func (hook *FileHook) Levels() []logrus.Level {
+	return logrus.AllLevels
 }
 
-func getNumInByte(maxDataNum string) (int64, error) {
+func (hook *FileHook) Fire(entry *logrus.Entry) error {
+	// Get formatted entry
+	lineBytes, err := hook.formatter.Format(entry)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not read log entry. %v", err)
+		return err
+	}
+
+	// Write log entry to file
+	_, err = hook.logFileHandle.WriteString(string(lineBytes))
+	if err != nil {
+		logrus.Errorf("Write log message %s to %s error.", lineBytes, hook.logFilePath)
+	}
+
+	// Rotate the file as needed
+	if err = hook.maybeDoLogfileRotation(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// logfileNeedsRotation checks to see if a file has grown too large
+func (hook *FileHook) logfileNeedsRotation() bool {
+	fileInfo, err := hook.logFileHandle.Stat()
+	if err != nil {
+		return false
+	}
+
+	return fileInfo.Size() >= hook.logRotationThreshold
+}
+
+// maybeDoLogfileRotation prevents descending into doLogfileRotation on every call as the inner
+// func is somewhat expensive and doesn't really need to happen every log entry.
+func (hook *FileHook) maybeDoLogfileRotation() error {
+	// We use a mutex to protect rotation from concurrent loggers, but in order to avoid
+	// contention over this resource with high logging levels, check the file before taking
+	// the lock.  Only if the file needs rotating do we then acquire the lock and recheck
+	// the size under it.  The winner of the lock race will rotate the file.
+	if hook.logfileNeedsRotation() {
+		hook.mutex.Lock()
+		defer hook.mutex.Unlock()
+
+		if hook.logfileNeedsRotation() {
+			// Do the rotation.
+			rotatedLogFileLocation := hook.logFilePath + time.Now().Format("20060102-150405")
+			if err := os.Rename(hook.logFilePath, rotatedLogFileLocation); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func getNumInByte() (int64, error) {
 	var sum int64 = 0
 	var err error
 
-	maxDataNum = strings.ToUpper(maxDataNum)
+	maxDataNum := strings.ToUpper(*logFileSizeThreshold)
 	lastLetter := maxDataNum[len(maxDataNum)-1:]
 
 	// 1.最后一位是M
@@ -68,17 +157,4 @@ func getNumInByte(maxDataNum string) (int64, error) {
 	}
 
 	return sum, nil
-}
-
-func copyFile(dstFile string, srcFile string) error {
-	cmd := fmt.Sprintf("cp %s %s", srcFile, dstFile)
-
-	shCmd := exec.Command("/bin/sh", "-c", cmd)
-	output, err := shCmd.CombinedOutput()
-	if err != nil {
-		logrus.Errorf("Cannot dump log file %s to %s: %s", srcFile, dstFile, output)
-		return err
-	}
-
-	return nil
 }
